@@ -10,7 +10,7 @@ from classify import Classifier, read_node_label
 
 class _LINE(object):
 
-    def __init__(self, graph, rep_size=128, batch_size=100, negative_ratio=5, order=3):
+    def __init__(self, graph, lr=.001, rep_size=128, batch_size=100, negative_ratio=5, order=3):
         self.cur_epoch = 0
         self.order = order
         self.g = graph
@@ -19,6 +19,7 @@ class _LINE(object):
         self.batch_size = batch_size
         self.cur_batch_size = 0
         self.negative_ratio = negative_ratio
+        self.lr = lr
 
         self.gen_sampling_table()
         self.sess = tf.Session()
@@ -70,9 +71,11 @@ class _LINE(object):
 
         if self.order == 1:
             self.loss = self.first_loss
-        else:
+        if self.order == 2:
             self.loss = self.second_loss
-        optimizer = tf.train.AdamOptimizer(0.01)
+        else:
+            self.loss = self.first_loss+self.second_loss
+        optimizer = tf.train.AdamOptimizer(self.lr)
         self.train_op = optimizer.minimize(self.loss)
 
     def train_one_epoch(self):
@@ -204,7 +207,7 @@ class _LINE(object):
 
     def get_embeddings(self):
         vectors = {}
-        embeddings = self.sess.run(tf.nn.l2_normalize(self.embeddings.eval(session=self.sess), 1))
+        embeddings = self.embeddings.eval(session=self.sess)
         look_back = self.g.look_back_list
         for i, embedding in enumerate(embeddings):
             vectors[look_back[i]] = embedding
@@ -212,61 +215,32 @@ class _LINE(object):
 
 class LINE(object):
 
-    def __init__(self, graph, rep_size=128, batch_size=1000, epoch=10, negative_ratio=5, order=3, label_file = None, clf_ratio = 0.5, auto_stop = True):
+    def __init__(self, graph, lr=.001, rep_size=128, batch_size=1000, epoch=10, negative_ratio=5, order=3, label_file = None, clf_ratio = 0.5, auto_stop = True):
         self.rep_size = rep_size
         self.order = order
         self.best_result = 0
         self.vectors = {}
-        if order == 3:
-            self.model1 = _LINE(graph, rep_size/2, batch_size, negative_ratio, order=1)
-            self.model2 = _LINE(graph, rep_size/2, batch_size, negative_ratio, order=2)
-            for i in range(epoch):
-                self.model1.train_one_epoch()
-                self.model2.train_one_epoch()
-                if label_file:
-                    self.get_embeddings()
-                    X, Y = read_node_label(label_file)
-                    print "Training classifier using {:.2f}% nodes...".format(clf_ratio*100)
-                    clf = Classifier(vectors=self.vectors, clf=LogisticRegression())
-                    result = clf.split_train_evaluate(X, Y, clf_ratio)
+        self.model = _LINE(graph, lr, rep_size, batch_size, negative_ratio, order=self.order)
+        for i in range(epoch):
+            self.model.train_one_epoch()
+            if label_file:
+                self.get_embeddings()
+                X, Y = read_node_label(label_file)
+                print "Training classifier using {:.2f}% nodes...".format(clf_ratio*100)
+                clf = Classifier(vectors=self.vectors, clf=LogisticRegression())
+                result = clf.split_train_evaluate(X, Y, clf_ratio)
 
-                    if result['micro'] < self.best_result and auto_stop:
-                        self.vectors = self.last_vectors
-                        print 'Auto stop!'
-                        return
-                    elif result['micro'] > self.best_result:
-                        self.best_result = result['micro']
-
-        else:
-            self.model = _LINE(graph, rep_size, batch_size, negative_ratio, order=self.order)
-            for i in range(epoch):
-                self.model.train_one_epoch()
-                if label_file:
-                    self.get_embeddings()
-                    X, Y = read_node_label(label_file)
-                    print "Training classifier using {:.2f}% nodes...".format(clf_ratio*100)
-                    clf = Classifier(vectors=self.vectors, clf=LogisticRegression())
-                    result = clf.split_train_evaluate(X, Y, clf_ratio)
-
-                    if result['micro'] < self.best_result and auto_stop:
-                        self.vectors = self.last_vectors
-                        print 'Auto stop!'
-                        return
-                    elif result['micro'] > self.best_result:
-                        self.best_result = result['micro']
-
+                if result['micro'] < self.best_result and auto_stop:
+                    self.vectors = self.last_vectors
+                    print 'Auto stop!'
+                    return
+                elif result['micro'] > self.best_result:
+                    self.best_result = result['micro']
         self.get_embeddings()
 
     def get_embeddings(self):
         self.last_vectors = self.vectors
-        self.vectors = {}
-        if self.order == 3:
-            vectors1 = self.model1.get_embeddings()
-            vectors2 = self.model2.get_embeddings()
-            for node in vectors1.keys():
-                self.vectors[node] = np.append(vectors1[node], vectors2[node])
-        else:
-            self.vectors = self.model.get_embeddings()
+        self.vectors = self.model.get_embeddings()
 
     def save_embeddings(self, filename):
         fout = open(filename, 'w')

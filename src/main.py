@@ -26,6 +26,10 @@ def parse_args():
                         help='Length of the random walk started at each node')
     parser.add_argument('--workers', default=8, type=int,
                         help='Number of parallel processes.')
+    parser.add_argument('--lr', default=.001, type=float,
+                        help='Learning rate')
+    parser.add_argument('--batch-size', default=1000, type=int,
+                        help='Batch size')
     parser.add_argument('--representation-size', default=128, type=int,
                         help='Number of latent dimensions to learn for each node.')
     parser.add_argument('--window-size', default=10, type=int,
@@ -80,10 +84,12 @@ def main(args):
                                  workers=args.workers, p=args.p, q=args.q, window=args.window_size)
     elif args.method == 'line':
         if args.label_file and not args.no_auto_stop:
-            model = line.LINE(g, epoch = args.epochs, rep_size=args.representation_size, order=args.order, 
-                label_file=args.label_file, clf_ratio=args.clf_ratio)
+            model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs,
+                                rep_size=args.representation_size, order=args.order, 
+                                label_file=args.label_file, clf_ratio=args.clf_ratio)
         else:
-            model = line.LINE(g, epoch = args.epochs, rep_size=args.representation_size, order=3)
+            model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs, 
+                                rep_size=args.representation_size, order=args.order)
     elif args.method == 'deepWalk':
         model = node2vec.Node2vec(graph=g, path_length=args.walk_length,
                                  num_paths=args.number_walks, dim=args.representation_size,
@@ -115,8 +121,6 @@ def main(args):
         print "Training classifier using {:.2f}% nodes...".format(args.clf_ratio*100)
         clf = Classifier(vectors=vectors, clf=LogisticRegression())
         clf.split_train_evaluate(X, Y, args.clf_ratio)
-
-
 
 if __name__ == "__main__":
     random.seed(32)
