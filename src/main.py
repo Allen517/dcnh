@@ -83,10 +83,12 @@ def main(args):
                                  num_paths=args.number_walks, dim=args.representation_size,
                                  workers=args.workers, p=args.p, q=args.q, window=args.window_size)
     elif args.method == 'line':
-        if args.label_file and not args.no_auto_stop:
+        print args.no_auto_stop
+        if args.label_file:
             model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs,
                                 rep_size=args.representation_size, order=args.order, 
-                                label_file=args.label_file, clf_ratio=args.clf_ratio)
+                                label_file=args.label_file, clf_ratio=args.clf_ratio, 
+                                auto_stop=args.no_auto_stop)
         else:
             model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs, 
                                 rep_size=args.representation_size, order=args.order)
