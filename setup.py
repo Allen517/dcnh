@@ -38,7 +38,7 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
     install_requires=[
-        'tensorflow=1.3.0',
+        'tensorflow==1.3.0',
         'numpy',
     ],
 )
