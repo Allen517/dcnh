@@ -48,7 +48,7 @@ class _LINE(object):
 
         ones = tf.ones(shape=[self.cur_batch_size, self.negative_ratio], dtype=tf.float32)
 
-        self.sample_sum2 = tf.reduce_sum(
+        sample_sum2 = tf.reduce_sum(
                                 tf.log(
                                     tf.add(
                                         ones,
@@ -57,8 +57,8 @@ class _LINE(object):
                                     )
                                 , axis=1)
         self.second_loss = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_e, self.pos_t_e_context), axis=1))) -
-                                   self.sample_sum2)
-        self.sample_sum1 = tf.reduce_sum(
+                                   sample_sum2)
+        sample_sum1 = tf.reduce_sum(
                                 tf.log(
                                     tf.add(
                                         ones,
@@ -67,7 +67,7 @@ class _LINE(object):
                                     )
                                 , axis=1)
         self.first_loss = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_e, self.pos_t_e), axis=1))) -
-                                   self.sample_sum1)
+                                   sample_sum1)
 
         if self.order == 1:
             self.loss = self.first_loss
@@ -119,7 +119,6 @@ class _LINE(object):
             for i in range(start_index, end_index):
                 if not random.random() < self.edge_prob[shuffle_indices[i]]:
                     shuffle_indices[i] = self.edge_alias[shuffle_indices[i]]
-                    print self.edge_prob[shuffle_indices[i]], self.edge_alias[shuffle_indices[i]]
                 cur_h = edges[shuffle_indices[i]][0]
                 head = cur_h*numNodes
                 cur_t = edges[shuffle_indices[i]][1]

@@ -54,8 +54,8 @@ def parse_args():
                         help='The ratio of training data in the classification')
     parser.add_argument('--order', default=3, type=int,
                         help='Choose the order of LINE, 1 means first order, 2 means second order, 3 means first order + second order')
-    parser.add_argument('--auto-stop', action='store_true',
-                        help='Using early stop when training LINE')
+    parser.add_argument('--no-auto-stop', action='store_true',
+                        help='no early stop when training LINE')
     parser.add_argument('--dropout', default=0.5, type=float, 
                         help='Dropout rate (1 - keep probability)')
     parser.add_argument('--weight-decay', type=float, default=5e-4,
@@ -83,12 +83,11 @@ def main(args):
                                  num_paths=args.number_walks, dim=args.representation_size,
                                  workers=args.workers, p=args.p, q=args.q, window=args.window_size)
     elif args.method == 'line':
-        print args.auto_stop
         if args.label_file:
             model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs,
                                 rep_size=args.representation_size, order=args.order, 
                                 label_file=args.label_file, clf_ratio=args.clf_ratio, 
-                                auto_stop=args.auto_stop)
+                                auto_stop=args.no-auto_stop)
         else:
             model = line.LINE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs, 
                                 rep_size=args.representation_size, order=args.order)
