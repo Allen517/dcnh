@@ -5,27 +5,34 @@ import math
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
-from classify import Classifier, read_node_label
-
+from gcn.LogHandler import LogHandler
 
 class _SNE(object):
 
-    def __init__(self, graph, lr=.001, rep_size=128, batch_size=100, negative_ratio=5, order=3):
+    def __init__(self, graph, lr=.001, rho=[.001,.001], mode_size=1000, rep_size=128, batch_size=100
+                    , negative_ratio=5, order=3, align_labels=None):
         '''
         graph: {'src':src_graph, 'obj':obj_graph}
         '''
         if not graph or not isinstance(graph, dict):
             print 'Graph should be a dictionary set of graphs'
             return
+
+        self.logger = LogHandler('sne')
+
         self.g = graph
+        self.look_up = {key:self.g[key].look_up_dict for key in self.g.keys()}
         self.node_size = {key:graph[key].G.number_of_nodes() for key in graph.keys()}
         self.cur_epoch = 0
         self.order = order
+        self.mode_size = mode_size
         self.rep_size = rep_size
         self.batch_size = batch_size
         self.cur_batch_size = {key:0 for key in graph.keys()}
         self.negative_ratio = negative_ratio
+        self.align_labels = align_labels
         self.lr = lr
+        self.rho = rho
 
         self.gen_sampling_table()
         self.sess = tf.Session()
@@ -44,16 +51,20 @@ class _SNE(object):
 
         cur_seed = random.getrandbits(32)
         self.embeddings_src = tf.get_variable(name="embeddings_src"+str(self.order), 
-                                shape=[self.node_size['src'], self.rep_size], 
+                                shape=[self.node_size['src'], self.mode_size], 
                                 initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
+        embeddings = tf.matmul(self.embeddings_src, self.codebook, b_is_sparse=True)
+        # self.embeddings_src = tf.get_variable(name="embeddings_src"+str(self.order), 
+        #                         shape=[self.node_size['src'], self.rep_size], 
+        #                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
         self.context_embeddings_src = tf.get_variable(name="context_embeddings_src"+str(self.order), 
                                         shape=[self.node_size['src'], self.rep_size], 
                                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
-        self.pos_h_src_e = tf.nn.embedding_lookup(self.embeddings_src, self.pos_h_src)
-        self.pos_t_src_e = tf.nn.embedding_lookup(self.embeddings_src, self.pos_t_src)
+        self.pos_h_src_e = tf.nn.embedding_lookup(embeddings, self.pos_h_src)
+        self.pos_t_src_e = tf.nn.embedding_lookup(embeddings, self.pos_t_src)
         self.pos_t_src_e_context = tf.nn.embedding_lookup(self.context_embeddings_src, self.pos_t_src)
-        self.pos_h_src_v_e = tf.nn.embedding_lookup(self.embeddings_src, self.pos_h_src_v)
-        self.neg_t_src_e = tf.nn.embedding_lookup(self.embeddings_src, self.neg_t_src)
+        self.pos_h_src_v_e = tf.nn.embedding_lookup(embeddings, self.pos_h_src_v)
+        self.neg_t_src_e = tf.nn.embedding_lookup(embeddings, self.neg_t_src)
         self.neg_t_src_e_context = tf.nn.embedding_lookup(self.context_embeddings_src, self.neg_t_src)
 
         ones = tf.ones(shape=[self.cur_batch_size_src, self.negative_ratio], dtype=tf.float32)
@@ -78,6 +89,7 @@ class _SNE(object):
                                 , axis=1)
         self.first_loss_src = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_src_e, self.pos_t_src_e), axis=1))) -
                                    sample_sum1)
+        self.l1_loss_src = tf.reduce_mean(tf.reduce_sum(self.embeddings_src, axis=1))
 
     def build_obj_graph(self):
         self.pos_h_obj = tf.placeholder(tf.int32, [None]) # positive cases from (h->t)
@@ -88,16 +100,20 @@ class _SNE(object):
 
         cur_seed = random.getrandbits(32)
         self.embeddings_obj = tf.get_variable(name="embeddings_obj"+str(self.order), 
-                                shape=[self.node_size['obj'], self.rep_size], 
+                                shape=[self.node_size['obj'], self.mode_size], 
                                 initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
+        embeddings = tf.matmul(self.embeddings_obj, self.codebook, b_is_sparse=True)
+        # self.embeddings_obj = tf.get_variable(name="embeddings_obj"+str(self.order), 
+        #                         shape=[self.node_size['obj'], self.rep_size], 
+        #                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
         self.context_embeddings_obj = tf.get_variable(name="context_embeddings_obj"+str(self.order), 
                                         shape=[self.node_size['obj'], self.rep_size], 
                                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
-        self.pos_h_obj_e = tf.nn.embedding_lookup(self.embeddings_obj, self.pos_h_obj)
-        self.pos_t_obj_e = tf.nn.embedding_lookup(self.embeddings_obj, self.pos_t_obj)
+        self.pos_h_obj_e = tf.nn.embedding_lookup(embeddings, self.pos_h_obj)
+        self.pos_t_obj_e = tf.nn.embedding_lookup(embeddings, self.pos_t_obj)
         self.pos_t_obj_e_context = tf.nn.embedding_lookup(self.context_embeddings_obj, self.pos_t_obj)
-        self.pos_h_obj_v_e = tf.nn.embedding_lookup(self.embeddings_obj, self.pos_h_obj_v)
-        self.neg_t_obj_e = tf.nn.embedding_lookup(self.embeddings_obj, self.neg_t_obj)
+        self.pos_h_obj_v_e = tf.nn.embedding_lookup(embeddings, self.pos_h_obj_v)
+        self.neg_t_obj_e = tf.nn.embedding_lookup(embeddings, self.neg_t_obj)
         self.neg_t_obj_e_context = tf.nn.embedding_lookup(self.context_embeddings_obj, self.neg_t_obj)
 
         ones = tf.ones(shape=[self.cur_batch_size_obj, self.negative_ratio], dtype=tf.float32)
@@ -122,17 +138,39 @@ class _SNE(object):
                                 , axis=1)
         self.first_loss_obj = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_obj_e, self.pos_t_obj_e), axis=1))) -
                                    sample_sum1)
+        self.l1_loss_obj = tf.reduce_mean(tf.reduce_sum(self.embeddings_obj, axis=1))
+
+    def build_aligns(self):
+        identity_users_src = tuple()
+        identity_users_obj = tuple()
+        for u,v in self.align_labels:
+            identity_users_src += self.look_up['src'][u],
+            identity_users_obj += self.look_up['obj'][v],
+        align_u = tf.nn.embedding_lookup(self.embeddings_src, identity_users_src)
+        align_v = tf.nn.embedding_lookup(self.embeddings_obj, identity_users_obj)
+
+        self.align_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(tf.add(align_u, -align_v)), axis=1)))
 
     def build_graph(self):
+        cur_seed = random.getrandbits(32)
+        self.codebook = tf.get_variable(name='codebook', shape=[self.mode_size, self.rep_size],
+                                        initializer=tf.contrib.layers.xavier_initializer(uniform=False, seed=cur_seed))
         self.build_src_graph()
         self.build_obj_graph()
+        self.build_aligns()
 
         if self.order == 1:
-            self.loss = self.first_loss_src+self.first_loss_obj
+            self.loss = self.first_loss_src+self.first_loss_obj\
+                            +self.rho[1]*self.align_loss
+                            # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         if self.order == 2:
-            self.loss = self.second_loss_src+self.second_loss_obj
+            self.loss = self.second_loss_src+self.second_loss_obj\
+                            +self.rho[1]*self.align_loss
+                            # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         else:
-            self.loss = self.first_loss_src+self.second_loss_src+self.first_loss_obj+self.second_loss_obj
+            self.loss = self.first_loss_src+self.second_loss_src+self.first_loss_obj+self.second_loss_obj\
+                            +self.rho[1]*self.align_loss
+                            # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         optimizer = tf.train.AdamOptimizer(self.lr)
         self.train_op = optimizer.minimize(self.loss)
 
@@ -154,10 +192,22 @@ class _SNE(object):
                 self.cur_batch_size_src : len(pos_t_src),
                 self.cur_batch_size_obj : len(pos_t_obj)
             }
-            _, cur_loss = self.sess.run([self.train_op, self.loss],feed_dict)
+            # _, cur_loss, l1_loss_src, l1_loss_obj, align_loss = self.sess.run([self.train_op, self.loss\
+            #                                         , self.l1_loss_src, self.l1_loss_obj\
+            #                                         , self.align_loss],feed_dict)
+            _, cur_loss, align_loss = self.sess.run([self.train_op, self.loss\
+                                                    , self.align_loss],feed_dict)
             sum_loss += cur_loss
             batch_id += 1
-        print 'epoch:{} sum of loss:{!s}'.format(self.cur_epoch, sum_loss)
+            # self.logger.info('Finish processing batch {} and loss={}, l1_loss(src,obj)={},{}\
+            #                     , align_loss={}'.format(batch_id, cur_loss, l1_loss_src, l1_loss_obj,\
+            #                         align_loss))
+            self.logger.info('Finish processing batch {} and loss={}, align_loss={}'
+                                .format(batch_id, cur_loss, align_loss))
+            # if batch_id%2==0:
+            #     print 'Saving embedding in batch #{}'.format(batch_id)
+            #     self.save_embeddings('tmp_embedding_{}'.format(batch_id))
+        self.logger.info('epoch:{} sum of loss:{!s}'.format(self.cur_epoch, sum_loss))
         self.cur_epoch += 1
 
     def get_random_node_pairs(self, i, key, shuffle_indices, edges, edge_set, numNodes):
@@ -179,11 +229,9 @@ class _SNE(object):
     def batch_iter(self):
         self.table_size = 1e7
 
-        look_up = {key:self.g[key].look_up_dict for key in self.g.keys()}
-
         numNodes = self.node_size
 
-        edges = {key:[(look_up[key][x[0]], look_up[key][x[1]]) for x in self.g[key].G.edges()] for key in self.g.keys()}
+        edges = {key:[(self.look_up[key][x[0]], self.look_up[key][x[1]]) for x in self.g[key].G.edges()] for key in self.g.keys()}
 
         data_size = {key:self.g[key].G.number_of_edges() for key in self.g.keys()}
         edge_set = {key:set([x[0]*numNodes[key]+x[1] for x in edges[key]]) for key in self.g.keys()}
@@ -272,13 +320,13 @@ class _SNE(object):
         power = 0.75
         numNodes = self.node_size
 
-        print "Pre-procesing for non-uniform negative sampling!"
+        self.logger.info("Pre-procesing for non-uniform negative sampling!")
         node_degree = {key:np.zeros(numNodes[key]) for key in self.g.keys()} # out degree
 
-        look_up = {key:self.g[key].look_up_dict for key in self.g.keys()}
+        self.look_up = {key:self.g[key].look_up_dict for key in self.g.keys()}
         for key in self.g.keys():
             for edge in self.g[key].G.edges():
-                node_degree[key][look_up[key][edge[0]]] += self.g[key].G[edge[0]][edge[1]]["weight"]
+                node_degree[key][self.look_up[key][edge[0]]] += self.g[key].G[edge[0]][edge[1]]["weight"]
 
         norm = {key:sum([math.pow(node_degree[key][i], power) for i in range(numNodes[key])]) for key in self.g.keys()}
 
@@ -350,39 +398,68 @@ class _SNE(object):
             vectors[look_back[i]] = embedding
         return vectors
 
+    def get_codebook(self):
+        return self.codebook.eval(session=self.sess)
+
     def get_embeddings(self):
         vectors_src = self.get_one_embeddings('src', self.embeddings_src)
         vectors_obj = self.get_one_embeddings('obj', self.embeddings_obj)
-        return {'src':vectors_src, 'obj':vectors_obj}
+        codebook = self.get_codebook()
+        return {'src':vectors_src, 'obj':vectors_obj, 'codebook':codebook}
+
+    # def save_embeddings(self, filename):
+    #     vectors = self.get_embeddings()
+    #     for key in vectors.keys():
+    #         fout = open(filename+'-'+key, 'w')
+    #         node_num = len(vectors[key].keys())
+    #         fout.write("{} {}\n".format(node_num, self.rep_size))
+    #         for node, vec in vectors[key].items():
+    #             fout.write("{} {}\n".format(node,
+    #                                         ' '.join([str(x) for x in vec])))
+    #         fout.close()
 
 class SNE(object):
 
-    def __init__(self, graph, lr=.001, rep_size=128, batch_size=1000, epoch=10, 
+    def __init__(self, graph, lr=.001, rho=[.001,.001], mode_size=1000, rep_size=128, batch_size=1000, epoch=10, 
                     negative_ratio=5, order=3, label_file = None, clf_ratio = 0.5, auto_stop = True):
         if not graph or not isinstance(graph, dict):
             print 'Param graph should be a dictionary set of graphs'
             return
+        self.mode_size = mode_size
         self.rep_size = rep_size
         self.order = order
         self.best_result = 0
         self.vectors = {}
-        self.model = _SNE(graph, lr, rep_size, batch_size, negative_ratio, order=self.order)
-        for i in range(epoch):
-            self.model.train_one_epoch()
-            # if label_file:
-            #     self.get_embeddings()
-            #     X, Y = read_node_label(label_file)
-            #     print "Training classifier using {:.2f}% nodes...".format(clf_ratio*100)
-            #     clf = Classifier(vectors=self.vectors, clf=LogisticRegression())
-            #     result = clf.split_train_evaluate(X, Y, clf_ratio)
+        if label_file:
+            align_labels = self.read_align_label(filename=label_file)
+            self.model = _SNE(graph, lr, rho, mode_size, rep_size, batch_size, negative_ratio
+                                , order=self.order, align_labels=align_labels)
+            for i in range(epoch):
+                    self.model.train_one_epoch()
+                    if i%1==0:
+                        self.get_embeddings()
+                        self.save_embeddings('tmp_embedding_{}'.format(i))
+                    # self.get_embeddings()
+                    # X, Y = read_node_label(label_file)
+                    # print "Training classifier using {:.2f}% nodes...".format(clf_ratio*100)
+                    # clf = Classifier(vectors=self.vectors, clf=LogisticRegression())
+                    # result = clf.split_train_evaluate(X, Y, clf_ratio)
 
-            #     if result['micro'] < self.best_result and auto_stop:
-            #         self.vectors = self.last_vectors
-            #         print 'Auto stop!'
-            #         return
-            #     elif result['micro'] > self.best_result:
-            #         self.best_result = result['micro']
-        self.get_embeddings()
+                    # if result['micro'] < self.best_result and auto_stop:
+                    #     self.vectors = self.last_vectors
+                    #     print 'Auto stop!'
+                    #     return
+                    # elif result['micro'] > self.best_result:
+                    #     self.best_result = result['micro']
+            self.get_embeddings()
+
+    def read_align_label(self, filename):
+        with open(filename, 'r') as fin:
+            for line in fin:
+                ln = line.strip()
+                if not ln:
+                    break
+                yield ln.split()
 
     def get_embeddings(self):
         self.last_vectors = self.vectors

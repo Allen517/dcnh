@@ -19,8 +19,14 @@ def parse_args():
                         help='Treat graph as directed.')
     parser.add_argument('--lr', default=.001, type=float,
                         help='Learning rate')
+    parser.add_argument('--rho0', default=.001, type=float,
+                        help='Balance parameter of l1-norm')
+    parser.add_argument('--rho1', default=.001, type=float,
+                        help='Balance parameter of identity embedding loss')
     parser.add_argument('--batch-size', default=1000, type=int,
                         help='Batch size')
+    parser.add_argument('--mode-size', default=1000, type=int,
+                        help='Number of latent modes in codebook.')
     parser.add_argument('--representation-size', default=128, type=int,
                         help='Number of latent dimensions to learn for each node.')
     parser.add_argument('--epochs', default=5, type=int,
@@ -44,7 +50,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
 def main(args):
     t1 = time.time()
     g_src = Graph()
@@ -57,14 +62,15 @@ def main(args):
         g_src.read_edgelist(filename=args.input1, weighted=args.weighted, directed=args.directed)
         g_obj.read_edgelist(filename=args.input2, weighted=args.weighted, directed=args.directed)
     g = {'src':g_src, 'obj':g_obj}
+    rho = [args.rho0, args.rho1]
     if args.method == 'sne':
         if args.label_file:
-            model = SNE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs,
+            model = SNE(g, lr=args.lr, rho=rho, batch_size=args.batch_size, mode_size=args.mode_size, epoch=args.epochs,
                                 rep_size=args.representation_size, order=args.order, 
                                 label_file=args.label_file, clf_ratio=args.clf_ratio, 
                                 auto_stop=args.auto_stop)
         else:
-            model = SNE(g, lr=args.lr, batch_size=args.batch_size, epoch=args.epochs, 
+            model = SNE(g, lr=args.lr, rho=rho, batch_size=args.batch_size, mode_size=args.mode_size, epoch=args.epochs, 
                                 rep_size=args.representation_size, order=args.order)
     t2 = time.time()
     print t2-t1
