@@ -17,7 +17,6 @@ class _LINE(object):
         self.node_size = graph.G.number_of_nodes()
         self.rep_size = rep_size
         self.batch_size = batch_size
-        self.cur_batch_size = 0
         self.negative_ratio = negative_ratio
         self.lr = lr
 
@@ -34,7 +33,6 @@ class _LINE(object):
         self.pos_t = tf.placeholder(tf.int32, [None]) # positive cases from (t<-h)
         self.pos_h_v = tf.placeholder(tf.int32, [None, self.negative_ratio]) # vector of h
         self.neg_t = tf.placeholder(tf.int32, [None, self.negative_ratio]) # negative cases
-        self.cur_batch_size = tf.placeholder(tf.int32)
 
         cur_seed = random.getrandbits(32)
         self.embeddings = tf.get_variable(name="embeddings"+str(self.order), shape=[self.node_size, self.rep_size], initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
@@ -46,24 +44,16 @@ class _LINE(object):
         self.neg_t_e = tf.nn.embedding_lookup(self.embeddings, self.neg_t)
         self.neg_t_e_context = tf.nn.embedding_lookup(self.context_embeddings, self.neg_t)
 
-        ones = tf.ones(shape=[self.cur_batch_size, self.negative_ratio], dtype=tf.float32)
-
         sample_sum2 = tf.reduce_sum(
                                 tf.log(
-                                    tf.add(
-                                        ones,
-                                        -tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_v_e, self.neg_t_e_context), axis=2))
-                                        )
+                                    1-tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_v_e, self.neg_t_e_context), axis=2))
                                     )
                                 , axis=1)
         self.second_loss = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_e, self.pos_t_e_context), axis=1))) -
                                    sample_sum2)
         sample_sum1 = tf.reduce_sum(
                                 tf.log(
-                                    tf.add(
-                                        ones,
-                                        -tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_v_e, self.neg_t_e), axis=2))
-                                        )
+                                    1-tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_v_e, self.neg_t_e), axis=2))
                                     )
                                 , axis=1)
         self.first_loss = tf.reduce_mean(-tf.log(tf.nn.sigmoid(tf.reduce_sum(tf.multiply(self.pos_h_e, self.pos_t_e), axis=1))) -
@@ -88,8 +78,7 @@ class _LINE(object):
                 self.pos_h : pos_h,
                 self.pos_h_v : pos_h_v,
                 self.pos_t : pos_t,
-                self.neg_t : neg_t,
-                self.cur_batch_size : len(pos_t)
+                self.neg_t : neg_t
             }
             _, cur_loss = self.sess.run([self.train_op, self.loss],feed_dict)
             sum_loss += cur_loss
