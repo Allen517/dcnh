@@ -18,5 +18,5 @@ python src/main.py --method line --input data/blogCatalog/bc_adjlist.txt --graph
 + SNE
 
 ```shell
-python src/sne_main.py --method sne --input1 data/blogCatalog/bc_adjlist.txt --input2 data/blogCatalog/bc_adjlist.txt --graph-format adjlist --output res/vec_all --epochs 10 --label-file data/blogCatalog/align_labels --rho0 0.001 --rho1 0.001 --mode-size 200
+python src/sne_main.py --method sne --input1 data/blogCatalog/bc_adjlist.txt --input2 data/blogCatalog/bc_adjlist.txt --graph-format adjlist --output res/vec_all --epochs 10 --label-file data/blogCatalog/align_labels --lr 0.1 --rho0 0.01 --rho1 0.01 --mode-size 200 --table-size 10000000
 ```

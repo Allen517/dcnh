@@ -1,9 +1,8 @@
 import numpy as np
 import random
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from sklearn.linear_model import LogisticRegression
 from libnrl.graph import *
-from libnrl.sne import SNE
+from libnrl.sne_plain_no_bin import SNE
 import time
 
 def parse_args():
@@ -23,6 +22,8 @@ def parse_args():
                         help='Balance parameter of l1-norm')
     parser.add_argument('--rho1', default=.001, type=float,
                         help='Balance parameter of identity embedding loss')
+    parser.add_argument('--table-size', default=1e8, type=int,
+                        help='Table size')
     parser.add_argument('--batch-size', default=1000, type=int,
                         help='Batch size')
     parser.add_argument('--mode-size', default=1000, type=int,
@@ -41,8 +42,6 @@ def parse_args():
                         help='the negative ratio of LINE')
     parser.add_argument('--weighted', action='store_true',
                         help='Treat graph as weighted')
-    parser.add_argument('--clf-ratio', default=0.5, type=float,
-                        help='The ratio of training data in the classification')
     parser.add_argument('--order', default=3, type=int,
                         help='Choose the order of LINE, 1 means first order, 2 means second order, 3 means first order + second order')
     parser.add_argument('--auto-stop', action='store_true',
@@ -67,7 +66,7 @@ def main(args):
         if args.label_file:
             model = SNE(g, lr=args.lr, rho=rho, batch_size=args.batch_size, mode_size=args.mode_size, epoch=args.epochs,
                                 rep_size=args.representation_size, order=args.order, 
-                                label_file=args.label_file, clf_ratio=args.clf_ratio, 
+                                label_file=args.label_file, 
                                 auto_stop=args.auto_stop)
         else:
             model = SNE(g, lr=args.lr, rho=rho, batch_size=args.batch_size, mode_size=args.mode_size, epoch=args.epochs, 

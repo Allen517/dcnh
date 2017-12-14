@@ -10,7 +10,7 @@ from gcn.LogHandler import LogHandler
 class _SNE(object):
 
     def __init__(self, graph, lr=.001, rho=[.001,.001], mode_size=1000, rep_size=128, batch_size=100
-                    , negative_ratio=5, order=3, align_labels=None):
+                    , table_size=1e8, negative_ratio=5, order=3, identity_labels=None):
         '''
         graph: {'src':src_graph, 'obj':obj_graph}
         '''
@@ -24,28 +24,28 @@ class _SNE(object):
 
         self.g = graph
         self.look_up = {key:self.g[key].look_up_dict for key in self.g.keys()}
-        self.node_size = {key:graph[key].G.number_of_nodes() for key in graph.keys()}
-        self.cur_epoch = 0
+        self.identity_labels = list(identity_labels)
         self.order = order
+
+        self.node_size = {key:graph[key].G.number_of_nodes() for key in graph.keys()}
         self.mode_size = mode_size
         self.rep_size = rep_size
         self.batch_size = batch_size
-        self.cur_batch_size = {key:0 for key in graph.keys()}
         self.negative_ratio = negative_ratio
-        self.align_labels = align_labels
+        self.table_size = table_size
+        
         self.lr = lr
         self.rho = rho
+        self.cur_epoch = 0
 
         self.gen_sampling_table()
+
         self.sess = tf.Session()
         cur_seed = random.getrandbits(32)
         initializer = tf.contrib.layers.xavier_initializer(uniform=False, seed=cur_seed)
         with tf.variable_scope("model", reuse=None, initializer=initializer):
             self.build_graph()
         self.sess.run(tf.global_variables_initializer())
-
-    def round(self, vec):
-        return tf.where(vec>=0, tf.ones(vec.get_shape().as_list()), -tf.ones(vec.get_shape().as_list()))
 
     def sigmoid(self, vec1, vec2, axis):
         return tf.nn.sigmoid(tf.reduce_sum(tf.multiply(vec1, vec2), axis=axis))
@@ -63,8 +63,7 @@ class _SNE(object):
         self.embeddings_src = tf.get_variable(name="embeddings_src"+str(self.order), 
                                 shape=[self.node_size['src'], self.mode_size], 
                                 initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
-        embeddings = tf.matmul(self.round(self.embeddings_src), self.codebook)
-        # embeddings = tf.matmul(self.embeddings_src, self.codebook, a_is_sparse=True)
+        embeddings = tf.matmul(self.embeddings_src, self.codebook, a_is_sparse=True)
         self.context_embeddings_src = tf.get_variable(name="context_embeddings_src"+str(self.order), 
                                         shape=[self.node_size['src'], self.rep_size], 
                                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
@@ -110,8 +109,7 @@ class _SNE(object):
         self.embeddings_obj = tf.get_variable(name="embeddings_obj"+str(self.order), 
                                 shape=[self.node_size['obj'], self.mode_size], 
                                 initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
-        embeddings = tf.matmul(self.round(self.embeddings_obj), self.codebook)
-        # embeddings = tf.matmul(self.embeddings_obj, self.codebook, a_is_sparse=True)
+        embeddings = tf.matmul(self.embeddings_obj, self.codebook, a_is_sparse=True)
         self.context_embeddings_obj = tf.get_variable(name="context_embeddings_obj"+str(self.order), 
                                         shape=[self.node_size['obj'], self.rep_size], 
                                         initializer = tf.contrib.layers.xavier_initializer(uniform = False, seed=cur_seed))
@@ -146,31 +144,31 @@ class _SNE(object):
                                 )
         self.l1_loss_obj = tf.reduce_mean(tf.reduce_sum(self.embeddings_obj, axis=1))
 
-    # def build_aligns(self):
-    #     identity_users_src = tuple()
-    #     identity_users_obj = tuple()
-    #     for u,v in self.align_labels:
-    #         identity_users_src += self.look_up['src'][u],
-    #         identity_users_obj += self.look_up['obj'][v],
-    #     align_u = tf.nn.embedding_lookup(self.embeddings_src, identity_users_src)
-    #     align_v = tf.nn.embedding_lookup(self.embeddings_obj, identity_users_obj)
-
-    #     self.align_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(tf.add(align_u, -align_v)), axis=1)))
-
-    def build_cos_aligns(self):
+    def build_aligns(self):
         identity_users_src = tuple()
         identity_users_obj = tuple()
-        for u,v in self.align_labels:
+        for u,v in self.identity_labels:
             identity_users_src += self.look_up['src'][u],
             identity_users_obj += self.look_up['obj'][v],
         align_u = tf.nn.embedding_lookup(self.embeddings_src, identity_users_src)
         align_v = tf.nn.embedding_lookup(self.embeddings_obj, identity_users_obj)
-        # align_u = tf.nn.embedding_lookup(tf.clip_by_value(self.embeddings_src,0.,1.), identity_users_src)
-        # align_v = tf.nn.embedding_lookup(tf.clip_by_value(self.embeddings_obj,0.,1.), identity_users_obj)
 
-        self.align_loss = -tf.reduce_mean(tf.reduce_sum(
-                                tf.multiply(tf.nn.l2_normalize(align_u, 1), tf.nn.l2_normalize(align_v, 1))
-                                , axis=1))
+        self.align_loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(align_u-align_v), axis=1)))
+
+    # def build_cos_aligns(self):
+    #     identity_users_src = tuple()
+    #     identity_users_obj = tuple()
+    #     for u,v in self.identity_labels:
+    #         identity_users_src += self.look_up['src'][u],
+    #         identity_users_obj += self.look_up['obj'][v],
+    #     align_u = tf.nn.embedding_lookup(self.embeddings_src, identity_users_src)
+    #     align_v = tf.nn.embedding_lookup(self.embeddings_obj, identity_users_obj)
+    #     # align_u = tf.nn.embedding_lookup(tf.clip_by_value(self.embeddings_src,0.,1.), identity_users_src)
+    #     # align_v = tf.nn.embedding_lookup(tf.clip_by_value(self.embeddings_obj,0.,1.), identity_users_obj)
+
+    #     self.align_loss = -tf.reduce_mean(tf.reduce_sum(
+    #                             tf.multiply(tf.nn.l2_normalize(align_u, 1), tf.nn.l2_normalize(align_v, 1))
+    #                             , axis=1))
 
     def build_graph(self):
         cur_seed = random.getrandbits(32)
@@ -178,20 +176,20 @@ class _SNE(object):
                                         initializer=tf.contrib.layers.xavier_initializer(uniform=False, seed=cur_seed))
         self.build_src_graph()
         self.build_obj_graph()
-        self.build_cos_aligns()
-        # self.build_aligns()
+        # self.build_cos_aligns()
+        self.build_aligns()
 
         if self.order == 1:
             self.loss = self.first_loss_src+self.first_loss_obj\
-                            +self.rho[1]*self.align_loss
+                            +self.rho[0]*self.align_loss
                             # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         if self.order == 2:
             self.loss = self.second_loss_src+self.second_loss_obj\
-                            +self.rho[1]*self.align_loss
+                            +self.rho[0]*self.align_loss
                             # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         else:
             self.loss = self.first_loss_src+self.second_loss_src+self.first_loss_obj+self.second_loss_obj\
-                            +self.rho[1]*self.align_loss
+                            +self.rho[0]*self.align_loss
                             # +self.rho[0]*(self.l1_loss_src+self.l1_loss_obj)\
         optimizer = tf.train.AdamOptimizer(self.lr)
         self.train_op = optimizer.minimize(self.loss)
@@ -227,7 +225,7 @@ class _SNE(object):
             # if batch_id%2==0:
             #     print 'Saving embedding in batch #{}'.format(batch_id)
             #     self.save_embeddings('tmp_embedding_{}'.format(batch_id))
-        self.logger.info('epoch:{} sum of loss:{!s}'.format(self.cur_epoch, sum_loss))
+        self.logger.info('epoch:{} sum of loss:{!s}'.format(self.cur_epoch, sum_loss/len(batches)))
         self.cur_epoch += 1
 
     def get_random_node_pairs(self, i, key, shuffle_indices, edges, edge_set, numNodes):
@@ -247,8 +245,6 @@ class _SNE(object):
         return cur_h, cur_h_v, cur_t, cur_neg_t
 
     def batch_iter(self):
-        self.table_size = 1e7
-
         numNodes = self.node_size
 
         edges = {key:[(self.look_up[key][x[0]], self.look_up[key][x[1]]) for x in self.g[key].G.edges()] for key in self.g.keys()}
@@ -339,7 +335,6 @@ class _SNE(object):
         #         end_index = min(start_index+self.batch_size, data_size['obj'])
 
     def gen_sampling_table(self):
-        table_size = 1e7
         power = 0.75
         numNodes = self.node_size
 
@@ -353,14 +348,14 @@ class _SNE(object):
 
         norm = {key:sum([math.pow(node_degree[key][i], power) for i in range(numNodes[key])]) for key in self.g.keys()}
 
-        self.sampling_table = {key:np.zeros(int(table_size), dtype=np.uint32) for key in self.g.keys()}
+        self.sampling_table = {key:np.zeros(int(self.table_size), dtype=np.uint32) for key in self.g.keys()}
 
         for key in self.g.keys():
             p = 0
             i = 0
             for j in range(numNodes[key]):
                 p += float(math.pow(node_degree[key][j], power)) / norm[key]
-                while i < table_size and float(i) / table_size < p:
+                while i < self.table_size and float(i) / self.table_size < p:
                     self.sampling_table[key][i] = j
                     i += 1
 
@@ -432,8 +427,8 @@ class _SNE(object):
 
 class SNE(object):
 
-    def __init__(self, graph, lr=.001, rho=[.001,.001], mode_size=1000, rep_size=128, batch_size=1000, epoch=10, 
-                    negative_ratio=5, order=3, label_file = None, clf_ratio = 0.5, auto_stop = True):
+    def __init__(self, graph, lr=.001, rho=[.001,.001], mode_size=1000, rep_size=128, batch_size=1000, epoch=10
+                    ,table_size=1e8, negative_ratio=5, order=3, label_file = None, auto_stop = True):
         if not graph or not isinstance(graph, dict):
             print 'Param graph should be a dictionary set of graphs'
             return
@@ -443,9 +438,10 @@ class SNE(object):
         self.best_result = 0
         self.vectors = {}
         if label_file:
-            align_labels = self.read_align_label(filename=label_file)
-            self.model = _SNE(graph, lr, rho, mode_size, rep_size, batch_size, negative_ratio
-                                , order=self.order, align_labels=align_labels)
+            identity_labels = self.read_identity_labels(filename=label_file)
+            self.model = _SNE(graph, lr=lr, rho=rho, mode_size=mode_size, rep_size=rep_size
+                                , batch_size=batch_size, table_size=table_size, negative_ratio=negative_ratio
+                                , order=self.order, identity_labels=identity_labels)
             for i in range(epoch):
                     self.model.train_one_epoch()
                     if i%2==0:
@@ -453,7 +449,7 @@ class SNE(object):
                         self.save_embeddings('tmp_embedding_{}'.format(i))
             self.get_embeddings()
 
-    def read_align_label(self, filename):
+    def read_identity_labels(self, filename):
         with open(filename, 'r') as fin:
             for line in fin:
                 ln = line.strip()

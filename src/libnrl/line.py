@@ -3,6 +3,7 @@
 import random
 import math
 import numpy as np
+import time
 from sklearn.linear_model import LogisticRegression
 import tensorflow as tf
 from classify import Classifier, read_node_label
@@ -81,6 +82,7 @@ class _LINE(object):
                 self.neg_t : neg_t
             }
             _, cur_loss = self.sess.run([self.train_op, self.loss],feed_dict)
+            # print 'loss:{}, batch_id:{}'.format(cur_loss, batch_id)
             sum_loss += cur_loss
             batch_id += 1
         print 'epoch:{} sum of loss:{!s}'.format(self.cur_epoch, sum_loss)
@@ -210,6 +212,7 @@ class LINE(object):
         self.vectors = {}
         self.model = _LINE(graph, lr, rep_size, batch_size, negative_ratio, order=self.order)
         for i in range(epoch):
+            t1 = time.time()
             self.model.train_one_epoch()
             if label_file:
                 self.get_embeddings()
@@ -224,6 +227,7 @@ class LINE(object):
                     return
                 elif result['micro'] > self.best_result:
                     self.best_result = result['micro']
+            print 'time cost: {}'.format(time.time()-t1)
         self.get_embeddings()
 
     def get_embeddings(self):
