@@ -1,0 +1,6 @@
+gensim
+networkx
+numpy
+scipy
+tensorflow==1.3.0
+
